@@ -1,17 +1,23 @@
-### 一个简单的web service客户端
+package com.github.hykes.ws.test;
 
-- 支持soap1.1和soap1.2协议
-- jdk6+
-- 依赖com.github.kevinsawicki:http-request-6.0.jar
-- 链式调用
 
-```java
+import com.github.hykes.ws.WsClient;
+import com.github.hykes.ws.test.handler.DefaultRequestHandler;
+import com.github.hykes.ws.test.request.WeatherMsg;
+import com.github.hykes.ws.test.response.SupportCityResponse;
+
+/**
+ * Desc:
+ * Mail: hehaiyangwork@qq.com
+ * Date: 2017/11/24
+ */
 public class WsClientTest {
 
     public static void main(String[] args) throws Exception {
 
         WeatherMsg weatherMsg = new WeatherMsg();
         weatherMsg.setName("北京");
+        weatherMsg.setAge("123");
 
         WsClient wsClient = new WsClient();
         wsClient.addRequestHandler(new DefaultRequestHandler());
@@ -25,4 +31,3 @@ public class WsClientTest {
     }
 
 }
-```
