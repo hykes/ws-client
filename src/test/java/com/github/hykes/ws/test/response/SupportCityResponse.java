@@ -15,7 +15,7 @@ public class SupportCityResponse {
 
     @XmlElementWrapper(name = "getSupportCityResult")
     @XmlElement(name = "string")
-    private List<String> strings = new ArrayList<>();
+    private List<String> strings = new ArrayList<String>();
 
     public List<String> getStrings() {
         return strings;

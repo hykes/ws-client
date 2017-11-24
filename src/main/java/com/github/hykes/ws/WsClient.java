@@ -74,16 +74,18 @@ public class WsClient {
         InputStream in = new ByteArrayInputStream(this.getOriginXml().getBytes());
         SOAPMessage reqMessage = MessageFactory.newInstance(this.getProtocol()).createMessage(null, in);
 
-        requestHandlers.forEach(handler -> handler.request(reqMessage));
+        for(WsClientRequestHandler handler: requestHandlers){
+            handler.request(reqMessage);
+        }
 
         ByteArrayOutputStream soap = new ByteArrayOutputStream();
         reqMessage.writeTo(soap);
 
         HttpRequest request = HttpRequest.post(this.getWsdl());
 
-        if (Objects.equals(SOAPConstants.SOAP_1_1_PROTOCOL, this.getProtocol())) {
+        if (SOAPConstants.SOAP_1_1_PROTOCOL.equals(this.getProtocol())) {
             request.contentType(SOAPConstants.SOAP_1_1_CONTENT_TYPE + ";charset=" + this.getCharset());
-        } else if (Objects.equals(SOAPConstants.SOAP_1_2_PROTOCOL, this.getProtocol())) {
+        } else if (SOAPConstants.SOAP_1_2_PROTOCOL.equals(this.getProtocol())) {
             request.contentType(SOAPConstants.SOAP_1_2_CONTENT_TYPE + ";charset=" + this.getCharset());
         } else {
             throw new WsException("soap.protocol.error");
@@ -100,7 +102,9 @@ public class WsClient {
             SOAPMessage resMessage = MessageFactory.newInstance(this.getProtocol()).createMessage(null, new ByteArrayInputStream(baos.toByteArray()));
             baos.close();
 
-            responseHandlers.forEach(handler -> handler.response(resMessage));
+            for(WsClientResponseHandler handler: responseHandlers){
+                handler.response(resMessage);
+            }
 
             ByteArrayOutputStream result = new ByteArrayOutputStream();
             resMessage.writeTo(result);
@@ -238,6 +242,7 @@ public class WsClient {
         // 指定是否使用换行和缩排对已编组 XML 数据进行格式化的属性名称。
         marshaller.setProperty(Marshaller.JAXB_FORMATTED_OUTPUT, true);
         marshaller.setProperty(Marshaller.JAXB_ENCODING, encoding);
+        marshaller.setProperty(Marshaller.JAXB_FRAGMENT, true);
         StringWriter writer = new StringWriter();
         marshaller.marshal(obj, writer);
         return writer.toString();
@@ -274,9 +279,9 @@ public class WsClient {
      * @return
      */
     public String getProtocolValue(){
-        if (Objects.equals(SOAPConstants.SOAP_1_1_PROTOCOL, this.getProtocol())) {
+        if (SOAPConstants.SOAP_1_1_PROTOCOL.equals(this.getProtocol())) {
             return SOAPConstants.URI_NS_SOAP_1_1_ENVELOPE;
-        } else if (Objects.equals(SOAPConstants.SOAP_1_2_PROTOCOL, this.getProtocol())) {
+        } else if (SOAPConstants.SOAP_1_2_PROTOCOL.equals(this.getProtocol())) {
             return SOAPConstants.URI_NS_SOAP_1_2_ENVELOPE;
         } else {
             throw new WsException("soap.protocol.error");
@@ -293,7 +298,7 @@ public class WsClient {
         return this;
     }
 
-    private Map<String, String> headers = new HashMap<>();
+    private Map<String, String> headers = new HashMap<String, String>();
 
     public Map<String, String> getHeaders(){
         return this.headers;
