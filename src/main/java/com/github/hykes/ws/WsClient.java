@@ -1,18 +1,22 @@
 package com.github.hykes.ws;
 
-import com.github.kevinsawicki.http.HttpRequest;
-
 import javax.xml.bind.*;
 import javax.xml.bind.annotation.*;
 import javax.xml.soap.MessageFactory;
 import javax.xml.soap.SOAPConstants;
 import javax.xml.soap.SOAPException;
 import javax.xml.soap.SOAPMessage;
+
 import java.io.*;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Proxy;
-import java.util.*;
+import java.net.URL;
+import java.net.URLConnection;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Web Service Client
@@ -216,7 +220,7 @@ public class WsClient {
 
         this.wsEntity = entity;
         this.object = obj;
-        this.originXml = convertToXml(entity, entity.getClass(), clazz);
+        this.originXml = convertToXml(this.getWsEntity(), this.getWsEntity().getClass(), clazz);
         return this;
     }
 
@@ -337,42 +341,84 @@ public class WsClient {
         baos = new ByteArrayOutputStream();
         reqMessage.writeTo(baos);
 
-        HttpRequest request = HttpRequest.post(this.getWsdl());
-
+        String contentType;
         if (SOAPConstants.SOAP_1_1_PROTOCOL.equals(this.getProtocol())) {
-            request.contentType(SOAPConstants.SOAP_1_1_CONTENT_TYPE + ";charset=" + this.getCharset());
+            contentType = SOAPConstants.SOAP_1_1_CONTENT_TYPE + ";charset=" + this.getCharset();
         } else if (SOAPConstants.SOAP_1_2_PROTOCOL.equals(this.getProtocol())) {
-            request.contentType(SOAPConstants.SOAP_1_2_CONTENT_TYPE + ";charset=" + this.getCharset());
+            contentType = SOAPConstants.SOAP_1_2_CONTENT_TYPE + ";charset=" + this.getCharset();
         } else {
             throw new WsException("soap.protocol.error");
-        }
-        if (!this.getHeaders().isEmpty()) {
-            request.headers(this.getHeaders());
         }
 
         this.originXml = baos.toString();
         baos.close();
+        String result = sendPost(this.getWsdl(), this.getOriginXml(), contentType, this.getCharset());
 
-        byte[] b = this.getOriginXml().getBytes(this.getCharset());
-        if (request.send(b).ok()) {
-            baos = new ByteArrayOutputStream();
-            request.receive(baos);
-            baos.close();
+        if (!responseHandlers.isEmpty()) {
+            SOAPMessage resMessage = MessageFactory.newInstance(this.getProtocol()).createMessage(null, new ByteArrayInputStream(result.getBytes()));
 
-            if (!responseHandlers.isEmpty()) {
-                SOAPMessage resMessage = MessageFactory.newInstance(this.getProtocol()).createMessage(null, new ByteArrayInputStream(baos.toByteArray()));
-
-                for(WsClientResponseHandler handler: responseHandlers){
-                    handler.response(resMessage);
-                }
-                baos = new ByteArrayOutputStream();
-                resMessage.writeTo(baos);
-                baos.close();
+            for(WsClientResponseHandler handler: responseHandlers){
+                handler.response(resMessage);
             }
-            this.resultXml = baos.toString();
-        } else {
-            throw new WsException(request.message());
+            baos = new ByteArrayOutputStream();
+            resMessage.writeTo(baos);
+            baos.close();
+            result = baos.toString();
         }
+        this.resultXml = result;
+
+    }
+
+    /**
+     * 向指定 URL 发送POST方法的请求
+     *
+     * @param url
+     *            发送请求的 URL
+     * @return 所代表远程资源的响应结果
+     */
+    private String sendPost(String url, String data, String contentType, String charset) {
+        DataOutputStream out = null;
+        BufferedReader in = null;
+        String result = "";
+        try {
+            URL realUrl = new URL(url);
+            // 打开和URL之间的连接
+            URLConnection conn = realUrl.openConnection();
+            // 设置通用的请求属性
+            conn.setRequestProperty("Content-Type", contentType);
+            // 发送POST请求必须设置如下两行
+            conn.setDoOutput(true);
+            conn.setDoInput(true);
+            // 获取URLConnection对象对应的输出流
+            out = new DataOutputStream(conn.getOutputStream());
+            // 发送请求参数
+            out.write(data.getBytes(charset));
+            // flush输出流的缓冲
+            out.flush();
+            // 定义BufferedReader输入流来读取URL的响应
+            in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+            String line;
+            while ((line = in.readLine()) != null) {
+                result += line;
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        //使用finally块来关闭输出流、输入流
+        finally{
+            try{
+                if(out!=null){
+                    out.close();
+                }
+                if(in!=null){
+                    in.close();
+                }
+            }
+            catch(IOException ex){
+                ex.printStackTrace();
+            }
+        }
+        return result;
     }
 
     /**
