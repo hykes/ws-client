@@ -1,4 +1,4 @@
-package com.github.hykes.ws.test.handler;
+package com.github.hykes.ws.test.interceptor;
 
 import com.github.hykes.ws.WsClient;
 
@@ -9,7 +9,7 @@ import javax.xml.soap.SOAPMessage;
  * Mail: hehaiyangwork@qq.com
  * Date: 2017/11/24
  */
-public class DefaultResponseHandler implements WsClient.WsClientResponseHandler {
+public class DefaultResponseInterceptor implements WsClient.ResponseInterceptor {
 
     /**
      * 处理 web service 响应数据
@@ -17,7 +17,7 @@ public class DefaultResponseHandler implements WsClient.WsClientResponseHandler 
      * @param soapMessage
      */
     @Override
-    public void response(SOAPMessage soapMessage) {
+    public void handleMessage(SOAPMessage soapMessage) {
 
     }
 }

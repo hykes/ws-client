@@ -1,4 +1,4 @@
-package com.github.hykes.ws.test.handler;
+package com.github.hykes.ws.test.interceptor;
 
 
 import com.github.hykes.ws.WsClient;
@@ -12,7 +12,7 @@ import java.util.Date;
  * Mail: hehaiyangwork@qq.com
  * Date: 2017/11/24
  */
-public class DefaultRequestHandler implements WsClient.WsClientRequestHandler {
+public class DefaultRequestInterceptor implements WsClient.RequestInterceptor {
 
     /**
      * 处理soap的数据
@@ -20,14 +20,13 @@ public class DefaultRequestHandler implements WsClient.WsClientRequestHandler {
      * @param soapMessage soap数据
      */
     @Override
-    public void request(SOAPMessage soapMessage) {
+    public void handleMessage(SOAPMessage soapMessage) {
         try {
             QName timestamp = new QName(soapMessage.getSOAPBody().getNamespaceURI(""), "timestamp", "");
             soapMessage.getSOAPHeader().addChildElement(timestamp).setValue(new Date().toString());
 
             QName sign = new QName(soapMessage.getSOAPBody().getNamespaceURI(""), "sign", "");
             soapMessage.getSOAPHeader().addChildElement(sign).setValue("xxxx");
-
         }catch (Exception e){
 
         }

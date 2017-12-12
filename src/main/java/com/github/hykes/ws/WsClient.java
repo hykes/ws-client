@@ -76,14 +76,14 @@ public class WsClient {
     private Map<String, String> headers = new HashMap<String, String>();
 
     /**
-     * 前置(请求)处理器列表
+     * 请求处理器列表
      */
-    private List<WsClientRequestHandler> requestHandlers = new ArrayList();
+    private List<RequestInterceptor> requestInterceptors = new ArrayList();
 
     /**
-     * 后置(响应)处理器列表
+     * 响应处理器列表
      */
-    private List<WsClientResponseHandler> responseHandlers = new ArrayList();
+    private List<ResponseInterceptor> responseInterceptors = new ArrayList();
 
     /**
      * 获取封装的soap实体
@@ -109,9 +109,9 @@ public class WsClient {
      * @return
      */
     public String getNamespace() {
-        if (this.namespace == null) {
-            throw new WsException("ws.ns.is.null");
-        }
+//        if (this.namespace == null) {
+//            throw new WsException("ws.ns.is.null");
+//        }
         return this.namespace;
     }
 
@@ -299,16 +299,16 @@ public class WsClient {
      * 添加前置处理句柄
      * @param clientRequestHandler
      */
-    public void addRequestHandler(WsClientRequestHandler clientRequestHandler){
-        requestHandlers.add(clientRequestHandler);
+    public void addRequestHandler(RequestInterceptor clientRequestHandler){
+        requestInterceptors.add(clientRequestHandler);
     }
 
     /**
      * 添加后置处理句柄
      * @param clientResponseHandler
      */
-    public void addResponseHandler(WsClientResponseHandler clientResponseHandler){
-        responseHandlers.add(clientResponseHandler);
+    public void addResponseHandler(ResponseInterceptor clientResponseHandler){
+        responseInterceptors.add(clientResponseHandler);
     }
 
     /**
@@ -334,12 +334,14 @@ public class WsClient {
         SOAPMessage reqMessage = MessageFactory.newInstance(this.getProtocol()).createMessage(null, in);
         in.close();
 
-        for(WsClientRequestHandler handler: requestHandlers){
-            handler.request(reqMessage);
+        for(RequestInterceptor handler: requestInterceptors){
+            handler.handleMessage(reqMessage);
         }
 
         baos = new ByteArrayOutputStream();
         reqMessage.writeTo(baos);
+        baos.close();
+        this.originXml = baos.toString();
 
         String contentType;
         if (SOAPConstants.SOAP_1_1_PROTOCOL.equals(this.getProtocol())) {
@@ -350,15 +352,13 @@ public class WsClient {
             throw new WsException("soap.protocol.error");
         }
 
-        this.originXml = baos.toString();
-        baos.close();
         String result = sendPost(this.getWsdl(), this.getOriginXml(), contentType, this.getCharset());
 
-        if (!responseHandlers.isEmpty()) {
+        if (!responseInterceptors.isEmpty()) {
             SOAPMessage resMessage = MessageFactory.newInstance(this.getProtocol()).createMessage(null, new ByteArrayInputStream(result.getBytes()));
 
-            for(WsClientResponseHandler handler: responseHandlers){
-                handler.response(resMessage);
+            for(ResponseInterceptor handler: responseInterceptors){
+                handler.handleMessage(resMessage);
             }
             baos = new ByteArrayOutputStream();
             resMessage.writeTo(baos);
@@ -366,7 +366,6 @@ public class WsClient {
             result = baos.toString();
         }
         this.resultXml = result;
-
     }
 
     /**
@@ -386,6 +385,12 @@ public class WsClient {
             URLConnection conn = realUrl.openConnection();
             // 设置通用的请求属性
             conn.setRequestProperty("Content-Type", contentType);
+
+            if (!this.getHeaders().isEmpty()) {
+                for(Map.Entry<String, String> entry: this.getHeaders().entrySet()){
+                    conn.setRequestProperty(entry.getKey(), entry.getValue());
+                }
+            }
             // 发送POST请求必须设置如下两行
             conn.setDoOutput(true);
             conn.setDoInput(true);
@@ -403,9 +408,8 @@ public class WsClient {
             }
         } catch (Exception e) {
             e.printStackTrace();
-        }
-        //使用finally块来关闭输出流、输入流
-        finally{
+        } finally{
+            //使用finally块来关闭输出流、输入流
             try{
                 if(out!=null){
                     out.close();
@@ -413,8 +417,7 @@ public class WsClient {
                 if(in!=null){
                     in.close();
                 }
-            }
-            catch(IOException ex){
+            } catch(IOException ex){
                 ex.printStackTrace();
             }
         }
@@ -448,7 +451,12 @@ public class WsClient {
      * @throws Exception
      */
     public <T> T convert(Class<T> clazz) throws Exception {
-        return (T) convertToJavaBean(clazz).getValue();
+        JAXBElement<T> object = convertToJavaBean(clazz);
+        if (object != null) {
+            return object.getValue();
+        } else {
+            return null;
+        }
     }
 
     /**
@@ -464,6 +472,9 @@ public class WsClient {
         JAXBContext context = JAXBContext.newInstance(clazz);
         Unmarshaller unmarshaller = context.createUnmarshaller();
         InputStream in = new ByteArrayInputStream(this.getResultXml().getBytes());
+        if (this.getResultXml() == null || this.getResultXml() == "") {
+            return null;
+        }
         SOAPMessage soapMessage = MessageFactory.newInstance(this.getProtocol()).createMessage(null, in);
 
         JAXBElement<T> element = unmarshaller.unmarshal(soapMessage.getSOAPBody().extractContentAsDocument(), clazz);
@@ -612,28 +623,28 @@ public class WsClient {
     }
 
     /**
-     * 前置(请求)处理器接口
+     * 请求处理器接口
      */
-    public interface WsClientRequestHandler {
+    public interface RequestInterceptor {
 
         /**
          * 处理 web service 请求数据
          * @param soapMessage
          */
-        void request(SOAPMessage soapMessage);
+        void handleMessage(SOAPMessage soapMessage);
 
     }
 
     /**
-     * 后置(响应)处理器接口
+     * 响应处理器接口
      */
-    public interface WsClientResponseHandler {
+    public interface ResponseInterceptor {
 
         /**
          * 处理 web service 响应数据
          * @param soapMessage
          */
-        void response(SOAPMessage soapMessage);
+        void handleMessage(SOAPMessage soapMessage);
     }
 
 }
