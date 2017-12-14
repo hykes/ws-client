@@ -7,11 +7,11 @@ import javax.xml.bind.annotation.*;
  * Mail: hehaiyangwork@qq.com
  * Date: 2017/11/24
  */
-@XmlRootElement
+@XmlRootElement(name = "getSupportCity", namespace = "http://WebXml.com.cn/")
 @XmlAccessorType(XmlAccessType.FIELD)
 public class WeatherMsg {
 
-    @XmlElement(required = true, name="byProvinceName")
+    @XmlElement(name="byProvinceName")
     private String name;
 
     @XmlTransient

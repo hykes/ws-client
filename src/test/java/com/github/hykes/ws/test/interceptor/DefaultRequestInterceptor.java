@@ -1,6 +1,5 @@
 package com.github.hykes.ws.test.interceptor;
 
-
 import com.github.hykes.ws.WsClient;
 
 import javax.xml.namespace.QName;
@@ -22,13 +21,14 @@ public class DefaultRequestInterceptor implements WsClient.RequestInterceptor {
     @Override
     public void handleMessage(SOAPMessage soapMessage) {
         try {
-            QName timestamp = new QName(soapMessage.getSOAPBody().getNamespaceURI(""), "timestamp", "");
+            QName timestamp = new QName(soapMessage.getSOAPBody().getNamespaceURI("soap"), "timestamp", "");
             soapMessage.getSOAPHeader().addChildElement(timestamp).setValue(new Date().toString());
 
-            QName sign = new QName(soapMessage.getSOAPBody().getNamespaceURI(""), "sign", "");
+            QName sign = new QName(soapMessage.getSOAPBody().getNamespaceURI("soap"), "sign", "");
             soapMessage.getSOAPHeader().addChildElement(sign).setValue("xxxx");
-        }catch (Exception e){
 
+        }catch (Exception e){
+            e.printStackTrace();
         }
     }
 

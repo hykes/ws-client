@@ -1,22 +1,21 @@
 package com.github.hykes.ws;
 
-import javax.xml.bind.*;
-import javax.xml.bind.annotation.*;
-import javax.xml.soap.MessageFactory;
-import javax.xml.soap.SOAPConstants;
-import javax.xml.soap.SOAPException;
-import javax.xml.soap.SOAPMessage;
+import com.sun.org.apache.xml.internal.utils.DOMBuilder;
+import org.w3c.dom.Document;
+import org.xml.sax.Attributes;
+import org.xml.sax.SAXException;
+import org.xml.sax.helpers.XMLFilterImpl;
 
-import java.io.*;
-import java.lang.reflect.Field;
-import java.lang.reflect.InvocationHandler;
-import java.lang.reflect.Proxy;
+import javax.xml.bind.JAXBContext;
+import javax.xml.bind.JAXBElement;
+import javax.xml.bind.Marshaller;
+import javax.xml.bind.Unmarshaller;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.soap.*;
+import java.io.ByteArrayOutputStream;
+import java.io.StringWriter;
 import java.net.URL;
-import java.net.URLConnection;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
  * Web Service Client
@@ -26,14 +25,14 @@ import java.util.Map;
 public class WsClient {
 
     /**
-     * 封装soap实体
+     * soap请求消息
      */
-    private WsEntity wsEntity;
+    private SOAPMessage requestMessage;
 
     /**
-     * 请求参数实体
+     * soap响应消息
      */
-    private Object object;
+    private SOAPMessage responseMessage;
 
     /**
      * 命名空间
@@ -49,16 +48,6 @@ public class WsClient {
      * WSDL地址
      */
     private String wsdl;
-
-    /**
-     * 当前原始报文
-     */
-    private String originXml;
-
-    /**
-     * 响应结果xml
-     */
-    private String resultXml;
 
     /**
      * 字符编码，默认UTF-8
@@ -86,22 +75,19 @@ public class WsClient {
     private List<ResponseInterceptor> responseInterceptors = new ArrayList();
 
     /**
-     * 获取封装的soap实体
+     * 获取请求消息
      * @return
      */
-    public WsEntity getWsEntity() {
-        if (this.wsEntity == null) {
-            this.wsEntity = new WsEntity();
-        }
-        return this.wsEntity;
+    public SOAPMessage getRequestMessage() {
+        return this.requestMessage;
     }
 
     /**
-     * 获取实际参数对象
+     * 获取响应消息
      * @return
      */
-    public Object getObject() {
-        return this.object;
+    public SOAPMessage getResponseMessage() {
+        return this.responseMessage;
     }
 
     /**
@@ -109,9 +95,9 @@ public class WsClient {
      * @return
      */
     public String getNamespace() {
-//        if (this.namespace == null) {
-//            throw new WsException("ws.ns.is.null");
-//        }
+        if (this.namespace == null) {
+            throw new WsException("ws.ns.is.null");
+        }
         return this.namespace;
     }
 
@@ -141,22 +127,26 @@ public class WsClient {
      * 获取请求报文
      * @return
      */
-    public String getOriginXml(){
-        if (this.originXml == null) {
-            return "";
+    public String getRequestXml() throws Exception {
+        if (this.getRequestMessage() == null) {
+            throw new WsException("request.soap.message.is.null");
         }
-        return this.originXml;
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        this.requestMessage.writeTo(baos);
+        return baos.toString();
     }
 
     /**
      * 获取响应报文
      * @return
      */
-    public String getResultXml() {
-        if (this.resultXml == null) {
-            return "";
+    public String getResponseXml() throws Exception {
+        if (this.getResponseMessage() == null) {
+            throw new WsException("response.soap.message.is.null");
         }
-        return this.resultXml;
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        this.getResponseMessage().writeTo(baos);
+        return baos.toString();
     }
 
     /**
@@ -182,20 +172,6 @@ public class WsClient {
     }
 
     /**
-     * 获取soap协议值
-     * @return
-     */
-    public String getProtocolValue(){
-        if (SOAPConstants.SOAP_1_1_PROTOCOL.equals(this.getProtocol())) {
-            return SOAPConstants.URI_NS_SOAP_1_1_ENVELOPE;
-        } else if (SOAPConstants.SOAP_1_2_PROTOCOL.equals(this.getProtocol())) {
-            return SOAPConstants.URI_NS_SOAP_1_2_ENVELOPE;
-        } else {
-            throw new WsException("soap.protocol.error");
-        }
-    }
-
-    /**
      * 获取自定义请求头
      * @return
      */
@@ -210,17 +186,76 @@ public class WsClient {
      * @throws Exception
      */
     public WsClient object(Object obj, Class clazz) throws Exception {
-        WsEntity entity = this.getWsEntity();
-        entity.setSoap(this.getProtocolValue());
-        entity.setNamespace(this.getNamespace());
-        WsBody body = new WsBody();
-        body.setMethod(getMethod());
-        body.setObj(obj);
-        entity.setBody(body);
 
-        this.wsEntity = entity;
-        this.object = obj;
-        this.originXml = convertToXml(this.getWsEntity(), this.getWsEntity().getClass(), clazz);
+        SOAPMessage soapMessage = MessageFactory.newInstance(this.getProtocol()).createMessage();
+        SOAPEnvelope soapEnvelope = soapMessage.getSOAPPart().getEnvelope();
+        soapEnvelope.addNamespaceDeclaration("soap", soapEnvelope.getNamespaceURI("env"));
+        soapEnvelope.removeNamespaceDeclaration("env");
+        soapEnvelope.addNamespaceDeclaration("xsi", "http://www.w3.org/2001/XMLSchema-instance");
+        soapEnvelope.addNamespaceDeclaration("xsd", "http://www.w3.org/2001/XMLSchema");
+        soapEnvelope.setPrefix("soap");
+
+        SOAPHeader soapHeader = soapMessage.getSOAPHeader();
+        soapHeader.setPrefix("soap");
+
+        SOAPBody soapBody = soapMessage.getSOAPBody();
+        soapBody.setPrefix("soap");
+
+        Document paramDoc = DocumentBuilderFactory.newInstance().newDocumentBuilder().newDocument();
+
+        Marshaller marshaller = JAXBContext.newInstance(clazz).createMarshaller();
+        marshaller.setProperty(Marshaller.JAXB_ENCODING, this.getCharset());// //编码格式
+        marshaller.setProperty(Marshaller.JAXB_FORMATTED_OUTPUT, true);// 是否格式化生成的xml串
+        marshaller.setProperty(Marshaller.JAXB_FRAGMENT, false);// 是否省略xm头声明信息
+
+        XMLFilterImpl nsfFilter = new XMLFilterImpl() {
+            private String rootNamespace = null;
+            private Stack<String> nsStack = new Stack<String>();
+            private Map<String, String> nsMap = new HashMap<String, String>();
+
+            @Override
+            public void startDocument() throws SAXException {
+                super.startDocument();
+            }
+
+            @Override
+            public void startElement(String uri, String localName, String qName, Attributes atts) throws SAXException {
+                if ("".equals(uri)) {
+                    uri = this.rootNamespace;
+                }
+                if (!"".equals(uri)) {
+                    this.rootNamespace = uri;
+                }
+                nsStack.push(qName);
+                nsMap.put(qName, uri);
+                super.startElement(uri, localName, localName, atts);
+            }
+
+            @Override
+            public void endElement(String uri, String localName, String qName) throws SAXException {
+                nsStack.pop();
+                if (!nsStack.empty()) {
+                    String root = nsStack.peek();
+                    this.rootNamespace = nsMap.get(root);
+                }
+                super.endElement(uri, localName, localName);
+            }
+
+            @Override
+            public void startPrefixMapping(String prefix, String url) throws SAXException {
+                super.startPrefixMapping("", url);
+            }
+        };
+
+        DOMBuilder domBuilder =  new DOMBuilder(paramDoc);
+        nsfFilter.setContentHandler(domBuilder);
+        marshaller.marshal(obj, nsfFilter);
+
+        soapBody.addDocument(paramDoc);
+
+        soapMessage.saveChanges();
+        this.requestMessage = soapMessage;
+
         return this;
     }
 
@@ -290,7 +325,7 @@ public class WsClient {
      * @param value
      * @return
      */
-    public WsClient header(String name, String value) {
+    public WsClient addHeader(String name, String value) {
         this.headers.put(name, value);
         return this;
     }
@@ -316,112 +351,27 @@ public class WsClient {
      * @return
      * @throws Exception
      */
-    public WsClient send() throws Exception{
-        this.request();
-        return this;
-    }
+    public WsClient send() throws Exception {
 
-    /**
-     * soap请求方法
-     * @return
-     * @throws Exception
-     */
-    private void request() throws Exception{
-
-        ByteArrayOutputStream baos;
-
-        InputStream in = new ByteArrayInputStream(this.getOriginXml().getBytes());
-        SOAPMessage reqMessage = MessageFactory.newInstance(this.getProtocol()).createMessage(null, in);
-        in.close();
+        for (Map.Entry<String, String> entry: this.getHeaders().entrySet()) {
+            this.getRequestMessage().getMimeHeaders().addHeader(entry.getKey(), entry.getValue());
+        }
 
         for(RequestInterceptor handler: requestInterceptors){
-            handler.handleMessage(reqMessage);
+            handler.handleMessage(this.requestMessage);
         }
 
-        baos = new ByteArrayOutputStream();
-        reqMessage.writeTo(baos);
-        baos.close();
-        this.originXml = baos.toString();
+        SOAPConnectionFactory soapConnFactory = SOAPConnectionFactory.newInstance();
+        SOAPConnection connection = soapConnFactory.createConnection();
 
-        String contentType;
-        if (SOAPConstants.SOAP_1_1_PROTOCOL.equals(this.getProtocol())) {
-            contentType = SOAPConstants.SOAP_1_1_CONTENT_TYPE + ";charset=" + this.getCharset();
-        } else if (SOAPConstants.SOAP_1_2_PROTOCOL.equals(this.getProtocol())) {
-            contentType = SOAPConstants.SOAP_1_2_CONTENT_TYPE + ";charset=" + this.getCharset();
-        } else {
-            throw new WsException("soap.protocol.error");
+        URL url = new URL(this.getWsdl());
+        this.responseMessage = connection.call(this.getRequestMessage(), url);
+
+        for(ResponseInterceptor handler: responseInterceptors){
+            handler.handleMessage(this.getResponseMessage());
         }
 
-        String result = sendPost(this.getWsdl(), this.getOriginXml(), contentType, this.getCharset());
-
-        if (!responseInterceptors.isEmpty()) {
-            SOAPMessage resMessage = MessageFactory.newInstance(this.getProtocol()).createMessage(null, new ByteArrayInputStream(result.getBytes()));
-
-            for(ResponseInterceptor handler: responseInterceptors){
-                handler.handleMessage(resMessage);
-            }
-            baos = new ByteArrayOutputStream();
-            resMessage.writeTo(baos);
-            baos.close();
-            result = baos.toString();
-        }
-        this.resultXml = result;
-    }
-
-    /**
-     * 向指定 URL 发送POST方法的请求
-     *
-     * @param url
-     *            发送请求的 URL
-     * @return 所代表远程资源的响应结果
-     */
-    private String sendPost(String url, String data, String contentType, String charset) {
-        DataOutputStream out = null;
-        BufferedReader in = null;
-        String result = "";
-        try {
-            URL realUrl = new URL(url);
-            // 打开和URL之间的连接
-            URLConnection conn = realUrl.openConnection();
-            // 设置通用的请求属性
-            conn.setRequestProperty("Content-Type", contentType);
-
-            if (!this.getHeaders().isEmpty()) {
-                for(Map.Entry<String, String> entry: this.getHeaders().entrySet()){
-                    conn.setRequestProperty(entry.getKey(), entry.getValue());
-                }
-            }
-            // 发送POST请求必须设置如下两行
-            conn.setDoOutput(true);
-            conn.setDoInput(true);
-            // 获取URLConnection对象对应的输出流
-            out = new DataOutputStream(conn.getOutputStream());
-            // 发送请求参数
-            out.write(data.getBytes(charset));
-            // flush输出流的缓冲
-            out.flush();
-            // 定义BufferedReader输入流来读取URL的响应
-            in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-            String line;
-            while ((line = in.readLine()) != null) {
-                result += line;
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        } finally{
-            //使用finally块来关闭输出流、输入流
-            try{
-                if(out!=null){
-                    out.close();
-                }
-                if(in!=null){
-                    in.close();
-                }
-            } catch(IOException ex){
-                ex.printStackTrace();
-            }
-        }
-        return result;
+        return this;
     }
 
     /**
@@ -467,17 +417,13 @@ public class WsClient {
      * @throws Exception JAXBException
      */
     @SuppressWarnings("unchecked")
-    private <T> JAXBElement convertToJavaBean(Class<T> clazz) throws WsException, JAXBException, SOAPException, IOException {
-
+    private <T> JAXBElement convertToJavaBean(Class<T> clazz) throws Exception {
         JAXBContext context = JAXBContext.newInstance(clazz);
         Unmarshaller unmarshaller = context.createUnmarshaller();
-        InputStream in = new ByteArrayInputStream(this.getResultXml().getBytes());
-        if (this.getResultXml() == null || this.getResultXml() == "") {
+        if (this.getResponseMessage() == null) {
             return null;
         }
-        SOAPMessage soapMessage = MessageFactory.newInstance(this.getProtocol()).createMessage(null, in);
-
-        JAXBElement<T> element = unmarshaller.unmarshal(soapMessage.getSOAPBody().extractContentAsDocument(), clazz);
+        JAXBElement<T> element = unmarshaller.unmarshal(this.getResponseMessage().getSOAPBody().extractContentAsDocument(), clazz);
         return element;
     }
 
@@ -488,9 +434,7 @@ public class WsClient {
         /**
          * Constructs a {@code WsException} with no detail message.
          */
-        public WsException() {
-            super();
-        }
+        private WsException() { super(); }
 
         /**
          * Constructs a {@code WsException} with the specified
@@ -500,125 +444,6 @@ public class WsClient {
          */
         public WsException(String s) {
             super(s);
-        }
-    }
-
-    @XmlAccessorType(XmlAccessType.FIELD)
-    @XmlType(propOrder = {"header", "body"})
-    @XmlRootElement(name = "soap:Envelope")
-    public static class WsEntity {
-
-        /**
-         * soap协议
-         */
-        @XmlAttribute(name = "xmlns:soap")
-        protected String soap;
-
-        /**
-         * 命名空间属性
-         */
-        @XmlAttribute(name = "xmlns")
-        protected String namespace;
-
-        @XmlElement(required = true, name="soap:Header")
-        protected WsHeader header = new WsHeader();
-
-        @XmlElement(required = true, name="soap:Body")
-        protected WsBody body = new WsBody();
-
-        public String getSoap() {
-            return soap;
-        }
-
-        public void setSoap(String soap) {
-            this.soap = soap;
-        }
-
-        public String getNamespace() {
-            return namespace;
-        }
-
-        public void setNamespace(String namespace) {
-            this.namespace = namespace;
-        }
-
-        public WsHeader getHeader() {
-            return header;
-        }
-
-        public void setHeader(WsHeader header) {
-            this.header = header;
-        }
-
-        public WsBody getBody() {
-            return body;
-        }
-
-        public void setBody(WsBody body) {
-            this.body = body;
-        }
-    }
-
-    @XmlAccessorType(XmlAccessType.FIELD)
-    public static class WsHeader {
-
-    }
-
-    @XmlAccessorType(XmlAccessType.FIELD)
-    public static class WsBody {
-
-        @XmlTransient
-        protected String method;
-
-        @XmlElement
-        protected Object object;
-
-        public void setObj(Object obj) throws Exception {
-            this.object = obj;
-            this.build();
-        }
-
-        public String getMethod() {
-            return method;
-        }
-
-        public void setMethod(String method) {
-            this.method = method;
-        }
-
-        public Object getObject() {
-            return object;
-        }
-
-        public void setObject(Object object) {
-            this.object = object;
-        }
-
-        /**
-         * 将包含的属性类的注解@XmlRootElement上name属性，实现自定义节点名称功能
-         * @throws Exception
-         */
-        private void build() throws Exception{
-            // 获取消息体注解值
-
-            if (this.method == null) {
-                return ;
-            }
-
-            //获取 WsBody 的 content 字段
-            Field field = WsBody.class.getDeclaredField("object");
-            //获取 method 字段上的 XmlElement 注解实例
-            XmlElement foo = field.getAnnotation(XmlElement.class);
-            //获取 XmlElement 这个代理实例所持有的 InvocationHandler
-            InvocationHandler h = Proxy.getInvocationHandler(foo);
-            // 获取 AnnotationInvocationHandler 的 memberValues 字段
-            Field hField = h.getClass().getDeclaredField("memberValues");
-            // 因为这个字段事 private final 修饰，所以要打开权限
-            hField.setAccessible(true);
-            // 获取 memberValues
-            Map memberValues = (Map) hField.get(h);
-            // 修改 value 属性值
-            memberValues.put("name", this.method);
         }
     }
 

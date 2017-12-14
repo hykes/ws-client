@@ -1,10 +1,16 @@
 package com.github.hykes.ws.test;
 
-
 import com.github.hykes.ws.WsClient;
-import com.github.hykes.ws.test.handler.DefaultRequestHandler;
+import com.github.hykes.ws.test.interceptor.DefaultRequestInterceptor;
 import com.github.hykes.ws.test.request.WeatherMsg;
 import com.github.hykes.ws.test.response.SupportCityResponse;
+
+import javax.xml.soap.*;
+import javax.xml.transform.stream.StreamSource;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.net.URL;
+import java.nio.charset.Charset;
 
 /**
  * Desc:
@@ -20,14 +26,15 @@ public class WsClientTest {
         weatherMsg.setAge("123");
 
         WsClient wsClient = new WsClient();
-        wsClient.addRequestHandler(new DefaultRequestHandler());
-        SupportCityResponse response = wsClient.wsdl("http://www.webxml.com.cn/WebServices/WeatherWebService.asmx?wsdl")
-                .namespace("http://WebXml.com.cn/").method("getSupportCity")
-                .object(weatherMsg, WeatherMsg.class).send().convert(SupportCityResponse.class);
+        wsClient.addRequestHandler(new DefaultRequestInterceptor());
+        wsClient.protocol(SOAPConstants.SOAP_1_2_PROTOCOL)
+                .wsdl("http://www.webxml.com.cn/WebServices/WeatherWebService.asmx?wsdl")
+                .method("getSupportCity").namespace("http://WebXml.com.cn/")
+                .object(weatherMsg, WeatherMsg.class).send();
+//                .convert(SupportCityResponse.class);
 
-        System.out.println(wsClient.getOriginXml());
-        System.out.println(wsClient.getResultXml());
-        System.out.println();
+        System.out.println(wsClient.getRequestXml());
+        System.out.println(wsClient.getResponseXml());
     }
 
 }
