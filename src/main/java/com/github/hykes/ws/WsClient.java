@@ -128,7 +128,7 @@ public class WsClient {
      * @return
      */
     public String getRequestXml() throws Exception {
-        if (this.getRequestMessage() == null) {
+        if (this.requestMessage == null) {
             throw new WsException("request.soap.message.is.null");
         }
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
@@ -141,11 +141,11 @@ public class WsClient {
      * @return
      */
     public String getResponseXml() throws Exception {
-        if (this.getResponseMessage() == null) {
+        if (this.responseMessage == null) {
             throw new WsException("response.soap.message.is.null");
         }
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        this.getResponseMessage().writeTo(baos);
+        this.responseMessage.writeTo(baos);
         return baos.toString();
     }
 
@@ -354,23 +354,28 @@ public class WsClient {
     public WsClient send() throws Exception {
 
         for (Map.Entry<String, String> entry: this.getHeaders().entrySet()) {
-            this.getRequestMessage().getMimeHeaders().addHeader(entry.getKey(), entry.getValue());
+            this.requestMessage.getMimeHeaders().addHeader(entry.getKey(), entry.getValue());
         }
 
         for(RequestInterceptor handler: requestInterceptors){
             handler.handleMessage(this.requestMessage);
+        }
+        if (this.requestMessage.saveRequired()) {
+            this.requestMessage.saveChanges();
         }
 
         SOAPConnectionFactory soapConnFactory = SOAPConnectionFactory.newInstance();
         SOAPConnection connection = soapConnFactory.createConnection();
 
         URL url = new URL(this.getWsdl());
-        this.responseMessage = connection.call(this.getRequestMessage(), url);
+        this.responseMessage = connection.call(this.requestMessage, url);
 
         for(ResponseInterceptor handler: responseInterceptors){
-            handler.handleMessage(this.getResponseMessage());
+            handler.handleMessage(this.requestMessage);
         }
-
+        if (this.responseMessage.saveRequired()) {
+            this.responseMessage.saveChanges();
+        }
         return this;
     }
 
@@ -394,37 +399,27 @@ public class WsClient {
     }
 
     /**
-     * 结果解析
-     * @param clazz
-     * @param <T>
-     * @return
+     *  xml转换成JavaBean
+     * @param clazz 待转化的对象
+     * @return 转化后的对象
      * @throws Exception
      */
     public <T> T convert(Class<T> clazz) throws Exception {
-        JAXBElement<T> object = convertToJavaBean(clazz);
-        if (object != null) {
-            return object.getValue();
-        } else {
-            return null;
-        }
-    }
-
-    /**
-     * xml转换成JavaBean
-     *
-     * @param clazz 待转化的对象
-     * @return 转化后的对象
-     * @throws Exception JAXBException
-     */
-    @SuppressWarnings("unchecked")
-    private <T> JAXBElement convertToJavaBean(Class<T> clazz) throws Exception {
         JAXBContext context = JAXBContext.newInstance(clazz);
         Unmarshaller unmarshaller = context.createUnmarshaller();
-        if (this.getResponseMessage() == null) {
+        if (this.responseMessage == null) {
             return null;
         }
-        JAXBElement<T> element = unmarshaller.unmarshal(this.getResponseMessage().getSOAPBody().extractContentAsDocument(), clazz);
-        return element;
+        /**
+         * @see javax.xml.soap.SOAPBody#extractContentAsDocument()
+         */
+        Document document = this.responseMessage.getSOAPBody().extractContentAsDocument();
+        JAXBElement<T> element = unmarshaller.unmarshal(document, clazz);
+        this.responseMessage.getSOAPBody().addDocument(document);
+        if (this.responseMessage.saveRequired()) {
+            this.responseMessage.saveRequired();
+        }
+        return element.getValue();
     }
 
     public static class WsException extends RuntimeException {
