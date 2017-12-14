@@ -1,8 +1,6 @@
 ### 一个简单的web service客户端
 
-- 支持soap1.1和soap1.2协议
-- jdk6+
-- 依赖com.github.kevinsawicki:http-request-6.0.jar
+- jdk8
 - 链式调用
 
 ```java
@@ -12,16 +10,18 @@ public class WsClientTest {
 
         WeatherMsg weatherMsg = new WeatherMsg();
         weatherMsg.setName("北京");
+        weatherMsg.setAge("123");
 
         WsClient wsClient = new WsClient();
-        wsClient.addRequestHandler(new DefaultRequestHandler());
-        SupportCityResponse response = wsClient.wsdl("http://www.webxml.com.cn/WebServices/WeatherWebService.asmx?wsdl")
-                .namespace("http://WebXml.com.cn/").method("getSupportCity")
-                .object(weatherMsg, WeatherMsg.class).send().convert(SupportCityResponse.class);
+        wsClient.addRequestHandler(new DefaultRequestInterceptor());
+        wsClient.protocol(SOAPConstants.SOAP_1_2_PROTOCOL)
+                .wsdl("http://www.webxml.com.cn/WebServices/WeatherWebService.asmx?wsdl")
+                .method("getSupportCity").namespace("http://WebXml.com.cn/")
+                .object(weatherMsg, WeatherMsg.class).send();
+//                .convert(SupportCityResponse.class);
 
-        System.out.println(wsClient.getOriginXml());
-        System.out.println(wsClient.getResultXml());
-        System.out.println();
+        System.out.println(wsClient.getRequestXml());
+        System.out.println(wsClient.getResponseXml());
     }
 
 }

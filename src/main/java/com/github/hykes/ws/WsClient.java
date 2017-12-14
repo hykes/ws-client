@@ -417,7 +417,7 @@ public class WsClient {
         JAXBElement<T> element = unmarshaller.unmarshal(document, clazz);
         this.responseMessage.getSOAPBody().addDocument(document);
         if (this.responseMessage.saveRequired()) {
-            this.responseMessage.saveRequired();
+            this.responseMessage.saveChanges();
         }
         return element.getValue();
     }
